@@ -2,6 +2,13 @@
 
 Sistema de emisión de tarjetas de crédito basado en arquitectura orientada a eventos (Kafka), compuesto por dos microservicios independientes: `card-issuer` (API REST) y `card-processor` (consumer).
 
+# Desplegado en AWS
+
+El proyecto esta deplegado, ingresando a https://tomishori.online/ ahi se puede probar las funcionalidades requeridas y algunos detalles extra que ayudan a la mejora de la revision del flujo pedido en la 
+prueba tecnica.
+
+URL : https://tomishori.online/
+
 ## Resumen del flujo
 
 1. El cliente solicita una tarjeta vía `POST /cards/issue`.
