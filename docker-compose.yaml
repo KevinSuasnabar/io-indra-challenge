@@ -1,0 +1,158 @@
+services:
+  kafka:
+    image: bitnamilegacy/kafka:4.0.0-debian-12-r10
+    container_name: kafka
+    environment:
+      - KAFKA_CFG_NODE_ID=1
+      - KAFKA_CFG_PROCESS_ROLES=broker,controller
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=false
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list',
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    networks:
+      - card-network
+
+  # Job de un solo disparo: crea los 3 tópicos y termina. Reutiliza
+  # kafka-topics.sh (ya en la imagen de kafka) en vez de armar una imagen
+  # Node nueva solo para esto.
+  kafka-init:
+    image: bitnamilegacy/kafka:4.0.0-debian-12-r10
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ['/bin/bash', '-c']
+    command:
+      - |
+        set -e
+        for topic in io.card.requested.v1 io.cards.issued.v1 io.card.requested.v1.dlq; do
+          echo "Creando tópico (si no existe): $$topic"
+          /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+            --create --if-not-exists --topic "$$topic" --partitions 1 --replication-factor 1
+        done
+    networks:
+      - card-network
+    restart: 'no'
+
+  card-issuer:
+    build:
+      context: .
+      dockerfile: card-issuer/Dockerfile
+    container_name: card-issuer
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_CLIENT_ID=card-issuer
+      - KAFKA_CONSUMER_GROUP_ID=card-issuer-status-sync
+      - SQLITE_DB_PATH=./data/card-issuer.sqlite
+      - RATE_LIMIT_WINDOW_MS=60000
+      - RATE_LIMIT_MAX=30
+      - LOG_LEVEL=info
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173
+    volumes:
+      - card_issuer_data:/app/card-issuer/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get({host:'localhost',port:3000,path:'/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - card-network
+
+  card-processor:
+    build:
+      context: .
+      dockerfile: card-processor/Dockerfile
+    container_name: card-processor
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_CLIENT_ID=card-processor
+      - KAFKA_CONSUMER_GROUP_ID=card-processor-group
+      - SQLITE_DB_PATH=./data/card-processor.sqlite
+      - LOG_LEVEL=info
+    volumes:
+      - card_processor_data:/app/card-processor/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get({host:'localhost',port:3001,path:'/health'},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - card-network
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    # Únicos puertos publicados al host de todo el stack.
+    ports:
+      - '443:443'
+    environment:
+      - DOMAIN
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../card-issuance-frontend/dist:/srv/frontend:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      card-issuer:
+        condition: service_healthy
+    networks:
+      - card-network
+
+networks:
+  card-network:
+    driver: bridge
+
+volumes:
+  kafka_data:
+    driver: local
+  card_issuer_data:
+    driver: local
+  card_processor_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

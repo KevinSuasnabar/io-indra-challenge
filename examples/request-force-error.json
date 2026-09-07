@@ -1,0 +1,11 @@
+{
+  "customer": {
+    "documentType": "DNI",
+    "documentNumber": "80912345",
+    "fullName": "Carlos Alberto Ramirez",
+    "age": 34,
+    "email": "carlos.ramirez@example.com"
+  },
+  "product": { "type": "VISA", "currency": "USD" },
+  "forceError": true
+}

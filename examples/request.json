@@ -1,0 +1,12 @@
+{
+    "customer": {
+      "documentType": "DNI",
+      "documentNumber": "72345678",
+      "fullName": "Maria Fernanda Quispe",
+      "age": 29,
+      "email": "maria.quispe@example.com"
+    },
+    "product": { "type": "VISA", "currency": "PEN" },
+    "forceError": false
+  }
+  

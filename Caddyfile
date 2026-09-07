@@ -1,0 +1,17 @@
+{$DOMAIN:localhost} {
+      tls {
+              issuer acme {
+                      disable_http_challenge
+              }
+              issuer internal
+      }
+
+      handle /cards* {
+              reverse_proxy card-issuer:3000
+      }
+      handle {
+              root * /srv/frontend
+              file_server
+              try_files {path} /index.html
+      }
+}
